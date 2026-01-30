@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Deepspace Body Tracker - Xavier</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { 
+            --star-purple: #7B68EE; 
+            --light-purple: #B19CD9; 
+            --deep-space: #0F0C29;  
+            --star-white: #E0E0FF;  
+            --card-bg: rgba(255, 255, 255, 0.1); 
+            --text-main: #F0F0FF;
+            --danger: #ff6b6b;
+            --success: #51cf66;
+        }
+        
+        body {
+            background-color: var(--deep-space);
+            background-image: radial-gradient(circle at 10% 20%, rgba(123, 104, 238, 0.2) 0%, transparent 50%),
+                              linear-gradient(180deg, #0F0C29 0%, #1a1a2e 100%);
+            color: var(--text-main);
+            font-family: 'PingFang TC', sans-serif;
+            margin: 0;
+            padding: 20px 15px 180px 15px;
+            min-height: 100vh;
+        }
+
+        /* 狀態列 */
+        .system-status-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px; border-bottom: 1px solid var(--light-purple);
+            margin-bottom: 20px; backdrop-filter: blur(10px);
+        }
+        .date-display { background: var(--star-purple); padding: 4px 12px; border-radius: 15px; font-size: 12px; }
+
+        /* 數據概覽區塊 */
+        .summary-box { 
+            background: var(--card-bg); padding: 20px; border-radius: 20px; 
+            text-align: center; border: 1px solid rgba(177, 156, 217, 0.3);
+            margin-bottom: 20px; display: flex; justify-content: space-around;
+        }
+        .summary-item { display: flex; flex-direction: column; }
+        .summary-label { font-size: 11px; color: var(--light-purple); letter-spacing: 1px; margin-bottom: 5px; }
+        .summary-value { font-size: 24px; font-family: 'Courier New', monospace; font-weight: bold; }
+        .bmi-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-top: 5px; background: rgba(255,255,255,0.1); }
+
+        /* 圖表區塊 */
+        .chart-container {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            height: 250px;
+        }
+
+        /* 輸入區塊 */
+        .input-section {
+            background: var(--card-bg); padding: 15px; border-radius: 15px;
+            margin-bottom: 20px; border: 1px solid rgba(177, 156, 217, 0.2);
+            display: flex; flex-wrap: wrap; gap: 10px;
+        }
+        
+        .input-group { width: 100%; display: flex; gap: 10px; }
+        
+        input {
+            background: rgba(255,255,255,0.1); border: 1px solid var(--light-purple);
+            color: white; padding: 10px; border-radius: 8px; flex: 1;
+            font-size: 14px;
+        }
+        input[type="date"] { flex: 1.5; }
+
+        .add-btn {
+            width: 100%; background: var(--star-purple); color: white; border: none;
+            padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 4px 10px rgba(123, 104, 238, 0.3); transition: 0.2s;
+        }
+        .add-btn:active { transform: scale(0.98); }
+
+        /* 列表區塊 */
+        .record-list { max-height: 300px; overflow-y: auto; padding-right: 5px; }
+        .record-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px; background: rgba(255,255,255,0.05);
+            border-radius: 10px; margin-bottom: 8px; font-size: 14px;
+            border-left: 3px solid var(--light-purple);
+        }
+        .record-date { color: var(--light-purple); font-size: 12px; margin-bottom: 2px; }
+        .record-weight { font-size: 16px; font-weight: bold; }
+        .delete-btn {
+            background: rgba(255, 107, 107, 0.2); color: #ffadad; border: 1px solid #ff6b6b;
+            border-radius: 5px; padding: 4px 10px; cursor: pointer; font-size: 12px;
+        }
+
+        /* 沈星回互動區 */
+        .character-zone { position: fixed; left: 10px; bottom: 20px; display: flex; align-items: flex-end; z-index: 1000; }
+        .xavier-img {
+            width: 90px; height: 90px; border-radius: 50%; border: 2px solid var(--light-purple);
+            background: #fff; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(123, 104, 238, 0.4);
+            object-fit: cover;
+        }
+        .dialogue-box {
+            background: white; color: #333; padding: 10px 15px; border-radius: 15px 15px 15px 0;
+            margin-left: 10px; margin-bottom: 40px; max-width: 180px; font-size: 13px;
+            position: relative; display: none; box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
+            line-height: 1.4; animation: popIn 0.3s ease;
+        }
+        .dialogue-box::after { content: ""; position: absolute; left: -10px; bottom: 0; border-width: 10px 10px 0 0; border-style: solid; border-color: white transparent transparent transparent; }
+
+        @keyframes popIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div class="system-status-bar">
+        <div class="date-display" id="currentDate">System Ready</div>
+        <div class="time-display" id="currentTime">--:--</div>
+    </div>
+
+    <div class="summary-box">
+        <div class="summary-item">
+            <span class="summary-label">CURRENT BMI</span>
+            <span class="summary-value" id="bmiValue">--</span>
+            <span class="bmi-tag" id="bmiStatus">Waiting...</span>
+        </div>
+        <div class="summary-item">
+            <span class="summary-label">LATEST (KG)</span>
+            <span class="summary-value" id="latestWeight">--</span>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="weightChart"></canvas>
+    </div>
+
+    <div class="input-section">
+        <div class="input-group">
+            <input type="number" id="userHeight" placeholder="身高(cm)" oninput="saveHeight()" style="flex: 0.8;">
+            <input type="date" id="recordDate">
+        </div>
+        <div class="input-group">
+            <input type="number" id="recordWeight" placeholder="今日體重 (kg)" step="0.1">
+        </div>
+        <button class="add-btn" onclick="addRecord()">記錄身體數據</button>
+    </div>
+
+    <div class="record-list" id="recordList">
+        </div>
+
+    <div class="character-zone">
+        <img src="4734.jpg" class="xavier-img" onclick="talkXavier()" alt="沈星回">
+        <div class="dialogue-box" id="dialogue">...你找我嗎？</div>
+    </div>
+
+    <script>
+        // 資料儲存變數
+        let records = [];
+        let myChart = null;
+        let userHeight = 160; // 預設身高
+
+        // 對話庫
+        const normalQuotes = [
+            "如果你累了，我的肩膀借你。",
+            "訓練辛苦了，要不要去吃點好吃的...啊，你在控制飲食？",
+            "別擔心，我會一直陪著你的。",
+            "剛才我好像睡著了一秒...",
+            "今天陽光很好，一起去散步怎麼樣？"
+        ];
+
+        const gainQuotes = [
+            "是不是昨天偷偷吃了什麼好吃的？沒關係，我在。",
+            "偶爾的起伏是為了積蓄能量，別太在意。",
+            "無論數字是多少，你在我眼裡的光芒都不會減少。"
+        ];
+
+        const lossQuotes = [
+            "變輕盈了？別飛得太遠，我會抓不住。",
+            "你很努力呢，我看到了。但不要太勉強自己。",
+            "看來訓練很有成效，要不要給你一點獎勵？"
+        ];
+
+        // 初始化：開啟網頁時執行
+        window.onload = function() {
+            try {
+                // 1. 讀取身高記憶
+                const savedHeight = localStorage.getItem('xavier_height');
+                if (savedHeight) {
+                    userHeight = parseFloat(savedHeight);
+                    document.getElementById('userHeight').value = userHeight;
+                }
+
+                // 2. 讀取體重記錄記憶
+                const savedData = localStorage.getItem('xavier_weight_records');
+                
+                // 設定日期輸入框預設為今天
+                document.getElementById('recordDate').valueAsDate = new Date();
+                
+                if (savedData) {
+                    records = JSON.parse(savedData);
+                    sortRecords();
+                    renderUI();
+                    
+                    // 記憶確認：如果有舊資料，沈星回會說這句話
+                    if(records.length > 0) {
+                        talkXavier("歡迎回來，數據都幫你記好了。");
+                    }
+                } else {
+                    talkXavier("初次見面，讓我們開始記錄吧。");
+                }
+            } catch (e) {
+                console.error("記憶功能讀取失敗", e);
+                alert("提醒：若您使用私密瀏覽模式，可能會導致資料無法儲存。");
+            }
+
+            updateTime();
+        };
+
+        // 更新時間
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('currentDate').innerText = now.toLocaleDateString('zh-TW').replace(/\//g, '.');
+            document.getElementById('currentTime').innerText = now.toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' });
+            setTimeout(updateTime, 1000);
+        }
+
+        // 儲存身高 (使用 oninput 即時觸發)
+        function saveHeight() {
+            const h = parseFloat(document.getElementById('userHeight').value);
+            if (h > 0) {
+                userHeight = h;
+                localStorage.setItem('xavier_height', h); // 寫入記憶體
+                calculateBMI(); 
+            }
+        }
+
+        // 新增記錄
+        function addRecord() {
+            const dateStr = document.getElementById('recordDate').value;
+            const weightVal = parseFloat(document.getElementById('recordWeight').value);
+
+            if (!dateStr || isNaN(weightVal)) {
+                talkXavier("這數據...好像有點模糊？");
+                return;
+            }
+
+            const existingIndex = records.findIndex(r => r.date === dateStr);
+            checkWeightTrend(dateStr, weightVal);
+
+            const newRecord = {
+                id: Date.now(), 
+                date: dateStr,
+                weight: weightVal
+            };
+
+            if (existingIndex >= 0) {
+                records[existingIndex] = newRecord; 
+            } else {
+                records.push(newRecord); 
+            }
+
+            sortRecords();
+            saveData(); // 這裡執行儲存
+            renderUI();
+            
+            document.getElementById('recordWeight').value = '';
+        }
+
+        function checkWeightTrend(newDate, newWeight) {
+            let tempRecords = [...records].sort((a, b) => new Date(a.date) - new Date(b.date));
+            let prevRecords = tempRecords.filter(r => new Date(r.date) < new Date(newDate));
+            
+            if (prevRecords.length > 0) {
+                const lastWeight = prevRecords[prevRecords.length - 1].weight;
+                if (newWeight < lastWeight) {
+                    talkXavier(lossQuotes[Math.floor(Math.random() * lossQuotes.length)]);
+                } else if (newWeight > lastWeight) {
+                    talkXavier(gainQuotes[Math.floor(Math.random() * gainQuotes.length)]);
+                } else {
+                    talkXavier("保持穩定也是一種進步。");
+                }
+            }
+        }
+
+        function deleteRecord(id) {
+            if(confirm("確定要刪除這條記錄嗎？")) {
+                records = records.filter(item => item.id !== id);
+                saveData(); // 刪除後立即儲存
+                renderUI();
+                talkXavier("數據已清除，我們可以重新開始。");
+            }
+        }
+
+        function sortRecords() {
+            records.sort((a, b) => new Date(a.date) - new Date(b.date));
+        }
+
+        // 核心記憶功能：將資料寫入瀏覽器
+        function saveData() {
+            try {
+                localStorage.setItem('xavier_weight_records', JSON.stringify(records));
+            } catch (e) {
+                console.error("儲存失敗", e);
+                alert("儲存失敗，可能是記憶體已滿或處於無痕模式。");
+            }
+        }
+
+        function renderUI() {
+            renderList();
+            renderChart();
+            calculateBMI();
+        }
+
+        function renderList() {
+            const list = document.getElementById('recordList');
+            list.innerHTML = '';
+            const displayList = [...records].reverse();
+
+            displayList.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'record-item';
+                itemDiv.innerHTML = `
+                    <div>
+                        <div class="record-date">${item.date}</div>
+                        <div class="record-weight">${item.weight} kg</div>
+                    </div>
+                    <button class="delete-btn" onclick="deleteRecord(${item.id})">刪除</button>
+                `;
+                list.appendChild(itemDiv);
+            });
+        }
+
+        function renderChart() {
+            const ctx = document.getElementById('weightChart').getContext('2d');
+            const labels = records.map(r => r.date.substring(5)); 
+            const data = records.map(r => r.weight);
+
+            if (myChart) {
+                myChart.destroy();
+            }
+
+            let gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, 'rgba(123, 104, 238, 0.5)');
+            gradient.addColorStop(1, 'rgba(123, 104, 238, 0.0)');
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Weight (kg)',
+                        data: data,
+                        borderColor: '#7B68EE',
+                        backgroundColor: gradient,
+                        borderWidth: 2,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#7B68EE',
+                        pointRadius: 4,
+                        fill: true,
+                        tension: 0.3 
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { 
+                            ticks: { color: '#B19CD9' },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        },
+                        y: { 
+                            ticks: { color: '#B19CD9' },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false } 
+                    }
+                }
+            });
+        }
+
+        function calculateBMI() {
+            if (records.length === 0 || !userHeight) {
+                document.getElementById('bmiValue').innerText = "--";
+                document.getElementById('latestWeight').innerText = "--";
+                return;
+            }
+            const latest = records[records.length - 1];
+            const weight = latest.weight;
+            const heightM = userHeight / 100;
+            const bmi = (weight / (heightM * heightM)).toFixed(1);
+
+            document.getElementById('latestWeight').innerText = weight;
+            document.getElementById('bmiValue').innerText = bmi;
+
+            const statusEl = document.getElementById('bmiStatus');
+            if (bmi < 18.5) { statusEl.innerText = "偏輕"; statusEl.style.color = "#FFD700"; }
+            else if (bmi < 24) { statusEl.innerText = "標準"; statusEl.style.color = "#51cf66"; }
+            else { statusEl.innerText = "偏重"; statusEl.style.color = "#ff6b6b"; }
+        }
+
+        function talkXavier(customText) {
+            const box = document.getElementById('dialogue');
+            box.innerText = customText || normalQuotes[Math.floor(Math.random() * normalQuotes.length)];
+            box.style.display = 'block';
+            if (window.dialogueTimer) clearTimeout(window.dialogueTimer);
+            window.dialogueTimer = setTimeout(() => { 
+                box.style.display = 'none'; 
+            }, 4000);
+        }
+    </script>
+</body>
+</html>
